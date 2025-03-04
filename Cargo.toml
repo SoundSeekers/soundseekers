@@ -1,0 +1,10 @@
+[package]
+name = "soundseekers"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rimd = "0.0.1"
+midly = "0.5.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
