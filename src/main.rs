@@ -1,9 +1,7 @@
 
 use midly::{Smf, TrackEventKind};
 use serde::Serialize;
-use std::fs::File;
-use std::io::BufReader;
-use std::env;
+use std::{env, fs::File, io::Read};
 
 #[derive(Serialize)]
 struct MidiJson {
@@ -11,10 +9,10 @@ struct MidiJson {
 
 }
 
-#[derivce(Serialize)]
+#[derive(Serialize)]
 struct EventJson {
     delta_time: u32,
-    data: Vec<u8>,
+    event_type: String,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,16 +24,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|arg| arg.trim_start_matches("if="))
         .ok_or("Usage: program if=path/to/file.mid")?;
 
-    let file = File::open(input_file)?;
-    let mut reader = BufReader::new(file);
-    let smf = Smf::read(&mut reader)?;
+    let mut file = File::open(input_file)?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
+
+    let smf = Smf::parse(&buffer)?;
 
     let tracks = smf.tracks.iter().map(|track| {
         track.iter().map(|event| {
             let event_type = match &event.kind {
                 TrackEventKind::Midi { message, .. } => format!("{:?}", message),
-                TrackEventKind::Meta(meta) => format!("{:?}", message),
-                TrackEventKind::SysEx(data) => format!("SysEx({}) bytse", data.len()),
+                TrackEventKind::Meta(meta) => format!("{:?}", meta),
+                TrackEventKind::SysEx(data) => format!("SysEx({}) bytes", data.len()),
                 _ => "Unknown".to_string(),
             };
             EventJson {
@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 event_type,
             }
         }).collect()
-    }).collect()
+    }).collect();
 
     let midi_json = MidiJson { tracks };
     let json = serde_json::to_string_pretty(&midi_json)?;
