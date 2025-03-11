@@ -1,6 +1,18 @@
+//! # MIDI Processor
+//!
+//! This module handles various operations for working with MIDI files
+//!
+//! ## Features
+//! - Convert MIDI file to JSON.
+//!
+//!
+//!
+//!
+
+
 use midly::{Smf, TrackEventKind};
 use serde::Serialize;
-use std::{fs::File, io::{Read}, error::Error};
+use std::{fs::File, io::{Read}, error::Error, io::Write};
 
 #[derive(Serialize)]
 pub struct MidiJson {
