@@ -1,7 +1,6 @@
 use clap::{App, Arg, SubCommand};
 use midi_processor::{convert_midi_to_json, convert_json_to_midi};
-use midi_processor::convert_midi_to_json;
-use mxl_json::convert_mxl_to_json;
+use mxl_json::{convert_mxl_to_json};
 use std::process::exit;
 
 mod midi_processor;
