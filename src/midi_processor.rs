@@ -14,6 +14,7 @@ use midly::{Smf, Track, TrackEvent, TrackEventKind, MidiMessage, MetaMessage, He
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::{Read}, error::Error};
 use std::fmt::Write;
+use std::borrow::Cow;
 
 #[derive(Serialize, Deserialize)]
 pub struct MidiJson {
@@ -54,85 +55,79 @@ pub fn convert_midi_to_json(input_file: &str) -> Result<String, Box<dyn Error>> 
     Ok(json)
 }
 
-pub fn convert_json_to_midi(json_file: &str) -> Result<String, Box<dyn Error>> {
-    let mut file = File::open(json_file)?;
+
+/*
+pub fn convert_json_to_midi(json_file: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+ let mut file = File::open(json_file)?;
     let mut json_str = String::new();
     file.read_to_string(&mut json_str)?;
 
     let midi_json: MidiJson = serde_json::from_str(&json_str)?;
     let mut tracks = Vec::new();
 
-    // Process each track in the MIDI JSON
     for track_json in midi_json.tracks {
         let mut track = Track::new();
 
-        // Process each event in the track
         for event in track_json {
             let delta = event.delta_time.into();
-
-            // Parse the event type and its parameters
-            let kind = if let Some(event) = event.event_type.strip_prefix("TrackName") {
-                let track_name = event.trim_matches(|c| c == '[' || c == ']');
-                TrackEventKind::Meta(MetaMessage::TrackName(track_name.as_bytes()))
-            } else if let Some(event) = event.event_type.strip_prefix("TimeSignature") {
-                let parts: Vec<&str> = event.trim_matches(|c| c == '(' || c == ')').split(',').collect();
-                let numerator = parts[0].parse::<u8>()?;
-                let denominator = parts[1].parse::<u8>()?;
-                let clocks_per_metronome = parts[2].parse::<u8>()?;
-                let thirtyseconds_per_quarter = parts[3].parse::<u8>()?;
-                TrackEventKind::Meta(MetaMessage::TimeSignature(numerator, denominator, clocks_per_metronome, thirtyseconds_per_quarter))
-            } else if let Some(event) = event.event_type.strip_prefix("KeySignature") {
-                let parts: Vec<&str> = event.trim_matches(|c| c == '(' || c == ')').split(',').collect();
-                let key = parts[0].parse::<i8>()?;
-                let minor = parts[1] == "true";
-                TrackEventKind::Meta(MetaMessage::KeySignature(key, minor))
-            } else if let Some(event) = event.event_type.strip_prefix("Tempo") {
-                let tempo = event.trim_matches(|c| c == 'u' || c == '2' || c == '(' || c == ')')
-                    .parse::<u32>()?;
-                TrackEventKind::Meta(MetaMessage::Tempo(tempo.into()))
-            } else if let Some(event) = event.event_type.strip_prefix("Controller") {
-                let parts: Vec<&str> = event.trim_matches(|c| c == '{' || c == '}').split(',').collect();
-                let controller = parts[0].trim().parse::<u8>()?;
-                let value = parts[1].trim().parse::<u8>()?;
-                TrackEventKind::Midi {
-                    channel: 0.into(),
-                    message: MidiMessage::ControlChange {
-                        controller: controller.into(),
-                        value: value.into(),
-                    },
+            let kind = match event.event_type.as_str() {
+                "EndOfTrack" => TrackEventKind::Meta(MetaMessage::EndOfTrack),
+                _ if event.event_type.starts_with("TrackName") => {
+                    let name = event.event_type[10..].trim_matches(|c| c == '[' || c == ']').to_owned();
+                    let name_byte: Cow<'static, [u8]> = Cow::Owned(name.into_bytes());
+                    TrackEventKind::Meta(MetaMessage::TrackName(name_byte.as_ref()))
                 }
-            } else if let Some(event) = event.event_type.strip_prefix("ProgramChange") {
-                let program = event.trim_matches(|c| c == '{' || c == '}').split(":").collect::<Vec<&str>>()[1].trim().parse::<u8>()?;
-                TrackEventKind::Midi {
-                    channel: 0.into(),
-                    message: MidiMessage::ProgramChange { program: program.into() },
+                _ if event.event_type.starts_with("TimeSignature") => {
+                    let parts: Vec<u8> = event.event_type[14..]
+                        .trim_matches(|c| c == '(' || c == ')')
+                        .split(',')
+                        .filter_map(|s| s.trim().parse().ok())
+                        .collect();
+                    if parts.len() == 4 {
+                        TrackEventKind::Meta(MetaMessage::TimeSignature(parts[0], parts[1], parts[2], parts[3]))
+                    } else {
+                        continue;
+                    }
                 }
-            } else if let Some(event) = event.event_type.strip_prefix("NoteOn") {
-                let parts: Vec<&str> = event.trim_matches(|c| c == '{' || c == '}').split(',').collect();
-                let key = parts[0].trim().split(":").collect::<Vec<&str>>()[1].trim().parse::<u8>()?;
-                let velocity = parts[1].trim().split(":").collect::<Vec<&str>>()[1].trim().parse::<u8>()?;
-                TrackEventKind::Midi {
-                    channel: 0.into(),
-                    message: MidiMessage::NoteOn {
-                        key: key.into(),
-                        vel: velocity.into(),
-                    },
+                _ if event.event_type.starts_with("KeySignature") => {
+                    let parts: Vec<&str> = event.event_type[12..].trim_matches(|c| c == '(' || c == ')').split(',').collect();
+                    if let (Ok(key), minor) = (parts[0].parse::<i8>(), parts[1] == "true") {
+                        TrackEventKind::Meta(MetaMessage::KeySignature(key, minor))
+                    } else {
+                        continue;
+                    }
                 }
-            } else if event.event_type == "EndOfTrack" {
-                TrackEventKind::Meta(MetaMessage::EndOfTrack)
-            } else {
-                continue; // Skip unsupported events
+                _ if event.event_type.starts_with("Tempo") => {
+                    if let Ok(tempo) = event.event_type[6..].trim_matches(|c| c == '(' || c == ')').parse::<u32>() {
+                        TrackEventKind::Meta(MetaMessage::Tempo(tempo.into()))
+                    } else {
+                        continue;
+                    }
+                }
+                _ if event.event_type.starts_with("NoteOn") => {
+                    let parts: Vec<u8> = event.event_type[7..]
+                        .trim_matches(|c| c == '{' || c == '}')
+                        .split(',')
+                        .filter_map(|s| s.split(':').nth(1)?.trim().parse().ok())
+                        .collect();
+                    if parts.len() == 2 {
+                        TrackEventKind::Midi {
+                            channel: 0.into(),
+                            message: MidiMessage::NoteOn { key: parts[0].into(), vel: parts[1].into() },
+                        }
+                    } else {
+                        continue;
+                    }
+                }
+                _ => continue,
             };
 
-            // Add the event to the track
             track.push(TrackEvent { delta, kind });
         }
 
-        // Add the track to the overall list of tracks
         tracks.push(track);
     }
 
-    // Create the SMF (Standard MIDI File) structure
     let smf = Smf {
         header: Header {
             format: Format::SingleTrack,
@@ -141,10 +136,8 @@ pub fn convert_json_to_midi(json_file: &str) -> Result<String, Box<dyn Error>> {
         tracks,
     };
 
-    // Write the smf structure into a string for output
-    let mut midi_string = String::new();
-    write!(midi_string, "{:?}", smf)?;
-
-    // Return the MIDI string
-    Ok(midi_string)
+    let mut midi_data = Vec::new();
+    smf.write(&mut midi_data)?;
+    Ok(midi_data)
 }
+*/
