@@ -10,11 +10,9 @@
 //!
 
 
-use midly::{Smf, Track, TrackEvent, TrackEventKind, MidiMessage, MetaMessage, Header, Format, Timing};
+use midly::{Smf, TrackEventKind};
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::{Read}, error::Error};
-use std::fmt::Write;
-use std::borrow::Cow;
 
 #[derive(Serialize, Deserialize)]
 pub struct MidiJson {
