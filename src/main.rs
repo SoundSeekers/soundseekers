@@ -1,5 +1,5 @@
 use clap::{App, Arg, SubCommand};
-use midi_processor::{convert_midi_to_json, convert_json_to_midi};
+use midi_processor::{convert_midi_to_json};
 use mxl_json::{convert_mxl_to_json};
 use std::process::exit;
 
@@ -29,17 +29,6 @@ fn main() {
                                         .help("Input MIDI file path"),
                                 ),
                         )
-                        .subcommand(
-                            SubCommand::with_name("midi")
-                                .about("Convert JSON to MIDI format")
-                                .arg(
-                                    Arg::new("input")
-                                        .long("if")
-                                        .takes_value(true)
-                                        .required(true)
-                                        .help("Input JSON file path"),
-                                    ),
-                            ),
 
                 ),
         )
@@ -78,20 +67,6 @@ fn main() {
                     }
                 }
             }
-            if let Some(midi_matches) = convert_matches.subcommand_matches("midi") {
-                if let Some(input_file) = midi_matches.value_of("input") {
-                    match convert_json_to_midi(input_file) {
-                        Ok(midi_data) => println!("{}", midi_data),
-                        Err(err) => {
-                            eprintln!("Error processing JSON file. {}", err);
-                            exit(1);
-                        }
-                }
-            }
-
-
-
-        }
     }
     if let Some(mxml_matches) = matches.subcommand_matches("mxl") {
         if let Some(convert_matches) = mxml_matches.subcommand_matches("convert") {
