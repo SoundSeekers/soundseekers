@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import math_ops
+import tensorflow.compat.v1 as tf_v1
 
 
 def leaky_relu(features, alpha=0.2, name=None):

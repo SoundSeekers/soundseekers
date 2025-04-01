@@ -74,6 +74,7 @@ for epoch in range(max_epochs):
                                   mini_batch_feed_dict)
 
             str_predictions = ctc_utils.sparse_tensor_to_strs(prediction)
+            print(str_predictions)
 
 
             for i in range(len(str_predictions)):
