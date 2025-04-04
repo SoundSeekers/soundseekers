@@ -8,7 +8,6 @@ import tensorflow.compat.v1 as tf_v1
 
 tf.compat.v1.disable_eager_execution()
 tf.config.set_visible_devices([], 'GPU')
-print("Using CPU:", tf.config.list_physical_devices('CPU'))
 
 parser = argparse.ArgumentParser(description='Decode a music score image with a trained model (CTC).')
 parser.add_argument('-image',  dest='image', type=str, required=True, help='Path to the input image.')
@@ -49,7 +48,7 @@ decoded, _ = tf_v1.nn.ctc_greedy_decoder(logits, seq_len)
 image = cv2.imread(args.image, cv2.IMREAD_GRAYSCALE)
 image = ctc_utils.resize(image, HEIGHT)
 image = ctc_utils.normalize(image)
-image = np.asarray(image).reshape(1,image.shape[0],image.shape[1],1)
+image = np.asarray(image).reshape(1, image.shape[0], image.shape[1], 1)
 
 seq_lengths = [ image.shape[2] / WIDTH_REDUCTION ]
 
@@ -61,6 +60,7 @@ prediction = sess.run(decoded,
                       })
 
 str_predictions = ctc_utils.sparse_tensor_to_strs(prediction)
-for w in str_predictions[0]:
-    print (int2word[w]),
-    print ('\t'),
+with open("./semantic_output", "w", encoding="utf-8") as f:
+    for w in str_predictions[0]:
+        f.write(int2word[w])
+        f.write("\t")
