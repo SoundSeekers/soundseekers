@@ -6,6 +6,46 @@ import numpy as np
 
 import tensorflow.compat.v1 as tf_v1
 
+def split_image_into_systems(image_path, lines_per_system=5):
+    import cv2
+    import numpy as np
+
+    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+
+    # Binarize the image
+    _, binary = cv2.threshold(image, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    # Compute horizontal projection
+    projection = np.sum(binary, axis=1)
+    threshold = np.max(projection) * 0.4
+    line_indices = np.where(projection > threshold)[0]
+
+    # Gruppiere nahe beieinanderliegende Pixelzeilen als einzelne Linie
+    line_positions = []
+    current_line = []
+    for idx in line_indices:
+        if not current_line or idx - current_line[-1] < 10:
+            current_line.append(idx)
+        else:
+            line_positions.append(int(np.mean(current_line)))
+            current_line = [idx]
+    if current_line:
+        line_positions.append(int(np.mean(current_line)))
+
+    # Jetzt immer 5 Linien als ein System zusammenfassen
+    systems = []
+    for i in range(0, len(line_positions), lines_per_system):
+        group = line_positions[i:i+lines_per_system]
+        if len(group) < lines_per_system:
+            break
+
+        top = max(group[0] - 20, 0)
+        bottom = min(group[-1] + 40, image.shape[0])
+        cropped = image[top:bottom, :]
+        systems.append(cropped)
+
+    return systems
+
 tf.compat.v1.disable_eager_execution()
 tf.config.set_visible_devices([], 'GPU')
 
@@ -45,22 +85,29 @@ WIDTH_REDUCTION, HEIGHT = sess.run([width_reduction_tensor, height_tensor])
 
 decoded, _ = tf_v1.nn.ctc_greedy_decoder(logits, seq_len)
 
-image = cv2.imread(args.image, cv2.IMREAD_GRAYSCALE)
-image = ctc_utils.resize(image, HEIGHT)
-image = ctc_utils.normalize(image)
-image = np.asarray(image).reshape(1, image.shape[0], image.shape[1], 1)
 
-seq_lengths = [ image.shape[2] / WIDTH_REDUCTION ]
+line_images = split_image_into_systems(args.image)
+for i, line_img in enumerate(line_images):
+    cv2.imshow(f'System {i+1}', line_img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
-prediction = sess.run(decoded,
-                      feed_dict={
-                          input: image,
-                          seq_len: seq_lengths,
-                          rnn_keep_prob: 1.0,
-                      })
-
-str_predictions = ctc_utils.sparse_tensor_to_strs(prediction)
 with open("./semantic_output", "w", encoding="utf-8") as f:
-    for w in str_predictions[0]:
-        f.write(int2word[w])
-        f.write("\t")
+    for line_img in line_images:
+        line_img = ctc_utils.resize(line_img, HEIGHT)
+        line_img = ctc_utils.normalize(line_img)
+        line_img = np.asarray(line_img).reshape(1, line_img.shape[0], line_img.shape[1], 1)
+
+        seq_lengths = [line_img.shape[2] / WIDTH_REDUCTION]
+
+        prediction = sess.run(decoded,
+                              feed_dict={
+                                  input: line_img,
+                                  seq_len: seq_lengths,
+                                  rnn_keep_prob: 1.0,
+                              })
+
+        str_predictions = ctc_utils.sparse_tensor_to_strs(prediction)
+        for w in str_predictions[0]:
+            f.write(int2word[w])
+            f.write("\t")
