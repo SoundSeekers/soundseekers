@@ -18,7 +18,7 @@ def find_horizontal_crop_bounds(binary_image, threshold_factor=0.4):
     right = min(barline_indices[-1], binary_image.shape[1])
     return left, right
 
-def resize_snippet(image, target_width=800):
+def resize_snippet(image, target_width=155):
     height, width = image.shape[:2]
     if width > target_width:
         scale = target_width / width
@@ -33,7 +33,12 @@ def split_image_into_systems(image_path, lines_per_system=5):
 
     _, binary = cv2.threshold(image, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
+    pad = 50  # Anzahl zusätzlicher Pixel links und rechts
     left, right = find_horizontal_crop_bounds(binary)
+
+    # Grenzen sicher erweitern
+    left = max(0, left - pad)
+    right = min(binary.shape[1], right + pad)
 
     image = image[:, left:right]
     binary = binary[:, left:right]
@@ -66,7 +71,7 @@ def split_image_into_systems(image_path, lines_per_system=5):
             break  # Unvollständiges System überspringen
 
         top = max(group[0] - 40, 0)
-        bottom = min(group[-1] + 40, image.shape[0])
+        bottom = min(group[-1] + 50, image.shape[0])
         cropped = image[top:bottom, :]
         systems.append(cropped)
 
@@ -114,22 +119,32 @@ decoded, _ = tf_v1.nn.ctc_greedy_decoder(logits, seq_len)
 
 line_images = split_image_into_systems(args.image)
 
-with open("./semantic_output", "w", encoding="utf-8") as f:
-    for line_img in line_images:
-        line_img = ctc_utils.resize(line_img, HEIGHT)
-        line_img = ctc_utils.normalize(line_img)
-        line_img = np.asarray(line_img).reshape(1, line_img.shape[0], line_img.shape[1], 1)
 
-        seq_lengths = [line_img.shape[2] / WIDTH_REDUCTION]
+#for i, line_img in enumerate(line_images):
+ #   cv2.imshow(f'System {i+1}', line_img)
+  #  cv2.waitKey(0)
+   # cv2.destroyAllWindows()
 
-        prediction = sess.run(decoded,
-                              feed_dict={
-                                  input: line_img,
-                                  seq_len: seq_lengths,
-                                  rnn_keep_prob: 1.0,
-                              })
+for i, line_img in enumerate(line_images):
+    line_img = ctc_utils.resize(line_img, HEIGHT)
+    line_img = ctc_utils.normalize(line_img)
+    line_img = np.asarray(line_img).reshape(1, line_img.shape[0], line_img.shape[1], 1)
 
-        str_predictions = ctc_utils.sparse_tensor_to_strs(prediction)
+    preview_img = line_img[0, :, :, 0]
+
+    seq_lengths = [line_img.shape[2] / WIDTH_REDUCTION]
+
+
+    prediction = sess.run(decoded,
+                          feed_dict={
+                              input: line_img,
+                              seq_len: seq_lengths,
+                              rnn_keep_prob: 1.0,
+                          })
+
+    str_predictions = ctc_utils.sparse_tensor_to_strs(prediction)
+    output_path = f"./semantic_output_line_{i + 1}.txt"
+    with open(output_path, "w", encoding="utf-8") as f:
         for w in str_predictions[0]:
             f.write(int2word[w])
             f.write("\t")
