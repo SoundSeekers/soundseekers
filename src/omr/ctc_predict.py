@@ -6,40 +6,66 @@ import numpy as np
 
 import tensorflow.compat.v1 as tf_v1
 
-def split_image_into_systems(image_path, lines_per_system=5):
-    import cv2
-    import numpy as np
+def find_horizontal_crop_bounds(binary_image, threshold_factor=0.4):
+    vertical_projection = np.sum(binary_image, axis=0)
+    threshold = np.max(vertical_projection) * threshold_factor
+    barline_indices = np.where(vertical_projection > threshold)[0]
 
+    if len(barline_indices) == 0:
+        return 0, binary_image.shape[1]
+
+    left = max(barline_indices[0], 0)
+    right = min(barline_indices[-1], binary_image.shape[1])
+    return left, right
+
+def resize_snippet(image, target_width=800):
+    height, width = image.shape[:2]
+    if width > target_width:
+        scale = target_width / width
+        new_width = target_width
+        new_height = int(height * scale)
+        image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
+    return image
+
+
+def split_image_into_systems(image_path, lines_per_system=5):
     image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
 
-    # Binarize the image
     _, binary = cv2.threshold(image, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    # Compute horizontal projection
+    left, right = find_horizontal_crop_bounds(binary)
+
+    image = image[:, left:right]
+    binary = binary[:, left:right]
+
     projection = np.sum(binary, axis=1)
-    threshold = np.max(projection) * 0.4
+    threshold = np.max(projection) * 0.5
     line_indices = np.where(projection > threshold)[0]
 
-    # Gruppiere nahe beieinanderliegende Pixelzeilen als einzelne Linie
-    line_positions = []
+    max_line_gap = int(image.shape[0] * 0.005)
+
+    line_centers = []
     current_line = []
+
     for idx in line_indices:
         if not current_line or idx - current_line[-1] < 10:
             current_line.append(idx)
         else:
-            line_positions.append(int(np.mean(current_line)))
+            # Mittelwert der Gruppe
+            line_centers.append(int(np.mean(current_line)))
             current_line = [idx]
+
     if current_line:
-        line_positions.append(int(np.mean(current_line)))
+        line_centers.append(int(np.mean(current_line)))
 
-    # Jetzt immer 5 Linien als ein System zusammenfassen
+    # Immer 5 Linien als ein System interpretieren
     systems = []
-    for i in range(0, len(line_positions), lines_per_system):
-        group = line_positions[i:i+lines_per_system]
+    for i in range(0, len(line_centers), lines_per_system):
+        group = line_centers[i:i + lines_per_system]
         if len(group) < lines_per_system:
-            break
+            break  # Unvollständiges System überspringen
 
-        top = max(group[0] - 20, 0)
+        top = max(group[0] - 40, 0)
         bottom = min(group[-1] + 40, image.shape[0])
         cropped = image[top:bottom, :]
         systems.append(cropped)
@@ -87,10 +113,6 @@ decoded, _ = tf_v1.nn.ctc_greedy_decoder(logits, seq_len)
 
 
 line_images = split_image_into_systems(args.image)
-for i, line_img in enumerate(line_images):
-    cv2.imshow(f'System {i+1}', line_img)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
 
 with open("./semantic_output", "w", encoding="utf-8") as f:
     for line_img in line_images:
