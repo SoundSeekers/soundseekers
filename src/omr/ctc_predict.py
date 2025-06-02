@@ -89,62 +89,72 @@ args = parser.parse_args()
 tf_v1.reset_default_graph()
 sess = tf_v1.InteractiveSession()
 
-# Read the dictionary
-dict_file = open(args.voc_file,'r')
-dict_list = dict_file.read().splitlines()
-int2word = dict()
-for word in dict_list:
-    word_idx = len(int2word)
-    int2word[word_idx] = word
-dict_file.close()
+def run_ctcpredict(image=args.image, model=args.model, voc_file=args.voc_file):
+    semantic_lines: list[str] = []
+    # Read the dictionary
+    dict_file = open(voc_file,'r')
+    dict_list = dict_file.read().splitlines()
+    int2word = dict()
+    for word in dict_list:
+        word_idx = len(int2word)
+        int2word[word_idx] = word
+    dict_file.close()
 
-# Restore weights
-saver = tf_v1.train.import_meta_graph(args.model)
-saver.restore(sess,args.model[:-5])
+    # Restore weights
+    saver = tf_v1.train.import_meta_graph(model)
+    saver.restore(sess, model[:-5])
 
-graph = tf_v1.get_default_graph()
+    graph = tf_v1.get_default_graph()
 
-input = graph.get_tensor_by_name("model_input:0")
-seq_len = graph.get_tensor_by_name("seq_lengths:0")
-rnn_keep_prob = graph.get_tensor_by_name("keep_prob:0")
-height_tensor = graph.get_tensor_by_name("input_height:0")
-width_reduction_tensor = graph.get_tensor_by_name("width_reduction:0")
-logits = tf_v1.get_collection("logits")[0]
+    input = graph.get_tensor_by_name("model_input:0")
+    seq_len = graph.get_tensor_by_name("seq_lengths:0")
+    rnn_keep_prob = graph.get_tensor_by_name("keep_prob:0")
+    height_tensor = graph.get_tensor_by_name("input_height:0")
+    width_reduction_tensor = graph.get_tensor_by_name("width_reduction:0")
+    logits = tf_v1.get_collection("logits")[0]
 
-# Constants that are saved inside the model itself
-WIDTH_REDUCTION, HEIGHT = sess.run([width_reduction_tensor, height_tensor])
+    # Constants that are saved inside the model itself
+    WIDTH_REDUCTION, HEIGHT = sess.run([width_reduction_tensor, height_tensor])
 
-decoded, _ = tf_v1.nn.ctc_greedy_decoder(logits, seq_len)
-
-
-line_images = split_image_into_systems(args.image)
-
-
-#for i, line_img in enumerate(line_images):
- #   cv2.imshow(f'System {i+1}', line_img)
-  #  cv2.waitKey(0)
-   # cv2.destroyAllWindows()
-
-for i, line_img in enumerate(line_images):
-    line_img = ctc_utils.resize(line_img, HEIGHT)
-    line_img = ctc_utils.normalize(line_img)
-    line_img = np.asarray(line_img).reshape(1, line_img.shape[0], line_img.shape[1], 1)
-
-    preview_img = line_img[0, :, :, 0]
-
-    seq_lengths = [line_img.shape[2] / WIDTH_REDUCTION]
+    decoded, _ = tf_v1.nn.ctc_greedy_decoder(logits, seq_len)
 
 
-    prediction = sess.run(decoded,
-                          feed_dict={
-                              input: line_img,
-                              seq_len: seq_lengths,
-                              rnn_keep_prob: 1.0,
-                          })
+    line_images = split_image_into_systems(image)
 
-    str_predictions = ctc_utils.sparse_tensor_to_strs(prediction)
-    output_path = f"./semantic_output_line_{i + 1}.txt"
-    with open(output_path, "w", encoding="utf-8") as f:
-        for w in str_predictions[0]:
-            f.write(int2word[w])
-            f.write("\t")
+    for i, line_img in enumerate(line_images):
+        semantic_line = ""
+
+        # Anzeigen der einzelnen Bilder zur Ueberpruefung
+        #cv2.imshow(f'System {i + 1}', line_img)
+        #cv2.waitKey(0)
+        #cv2.destroyAllWindows()
+
+        line_img = ctc_utils.resize(line_img, HEIGHT)
+        line_img = ctc_utils.normalize(line_img)
+        line_img = np.asarray(line_img).reshape(1, line_img.shape[0], line_img.shape[1], 1)
+
+        preview_img = line_img[0, :, :, 0]
+
+        seq_lengths = [line_img.shape[2] / WIDTH_REDUCTION]
+
+        prediction = sess.run(decoded,
+                              feed_dict={
+                                  input: line_img,
+                                  seq_len: seq_lengths,
+                                  rnn_keep_prob: 1.0,
+                              })
+
+        str_predictions = ctc_utils.sparse_tensor_to_strs(prediction)
+        output_path = f"./semantic_output_line_{i + 1}.txt"
+        with open(output_path, "w", encoding="utf-8") as f:
+            for w in str_predictions[0]:
+                f.write(int2word[w])
+                f.write("\t")
+                semantic_line += int2word[w] + "\t"
+            semantic_lines.append(semantic_line)
+            semantic_line = ""
+
+    return semantic_lines
+
+
+liste = run_ctcpredict(args.image, args.model, args.voc_file)
