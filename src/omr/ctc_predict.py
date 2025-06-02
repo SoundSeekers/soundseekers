@@ -156,5 +156,4 @@ def run_ctcpredict(image=args.image, model=args.model, voc_file=args.voc_file):
 
     return semantic_lines
 
-
-liste = run_ctcpredict(args.image, args.model, args.voc_file)
+run_ctcpredict(args.image, args.model, args.voc_file)
